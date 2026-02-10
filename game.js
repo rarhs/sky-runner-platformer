@@ -28,6 +28,110 @@ function aabb(a, b) {
 function lerp(a, b, t) { return a + (b - a) * t; }
 function rand(min, max) { return Math.random() * (max - min) + min; }
 
+// ---- SOUND SYSTEM (Web Audio API) ----
+let audioCtx = null;
+let musicGain = null;
+let musicPlaying = false;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function playTone(freq, duration, type, vol, slide) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'square';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  if (slide) osc.frequency.linearRampToValueAtTime(slide, audioCtx.currentTime + duration);
+  gain.gain.setValueAtTime(vol || 0.15, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function sfxJump() {
+  playTone(300, 0.15, 'square', 0.12, 600);
+}
+
+function sfxCoin() {
+  playTone(987, 0.08, 'square', 0.1);
+  setTimeout(() => playTone(1318, 0.12, 'square', 0.1), 80);
+}
+
+function sfxStomp() {
+  playTone(200, 0.15, 'triangle', 0.15, 80);
+}
+
+function sfxDeath() {
+  playTone(400, 0.15, 'square', 0.12, 200);
+  setTimeout(() => playTone(300, 0.15, 'square', 0.12, 150), 150);
+  setTimeout(() => playTone(200, 0.3, 'square', 0.1, 80), 300);
+}
+
+function sfxLevelComplete() {
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((n, i) => {
+    setTimeout(() => playTone(n, 0.2, 'square', 0.1), i * 120);
+  });
+}
+
+function sfxWin() {
+  const notes = [523, 659, 784, 659, 784, 1047];
+  notes.forEach((n, i) => {
+    setTimeout(() => playTone(n, 0.25, 'triangle', 0.1), i * 150);
+  });
+}
+
+// Background music — a simple retro loop
+let musicTimeout = null;
+function startMusic() {
+  if (!audioCtx || musicPlaying) return;
+  musicPlaying = true;
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = 0.04;
+  musicGain.connect(audioCtx.destination);
+  playMusicLoop();
+}
+
+function stopMusic() {
+  musicPlaying = false;
+  if (musicTimeout) clearTimeout(musicTimeout);
+}
+
+function playMusicLoop() {
+  if (!musicPlaying || !audioCtx) return;
+  // Simple melody pattern
+  const melody = [
+    262, 294, 330, 349, 392, 349, 330, 294,
+    262, 330, 392, 523, 392, 330, 262, 294,
+    349, 392, 440, 392, 349, 330, 294, 262
+  ];
+  const noteLen = 0.18;
+  const gap = 200; // ms between notes
+  melody.forEach((freq, i) => {
+    musicTimeout = setTimeout(() => {
+      if (!musicPlaying || !audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + noteLen);
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + noteLen);
+    }, i * gap);
+  });
+  // Loop after melody finishes
+  musicTimeout = setTimeout(() => playMusicLoop(), melody.length * gap);
+}
+
 // ---- PARTICLE SYSTEM ----
 class Particle {
   constructor(x, y, color, vx, vy, life, size) {
@@ -258,8 +362,8 @@ function drawMountains(parallax, color, baseY, height) {
   for (let x = 0; x <= canvas.width + 80; x += 80) {
     const wx = x + cam.x * parallax;
     const h = Math.sin(wx * 0.005) * height * 0.6
-            + Math.sin(wx * 0.012 + 2) * height * 0.3
-            + Math.sin(wx * 0.025 + 5) * height * 0.1;
+      + Math.sin(wx * 0.012 + 2) * height * 0.3
+      + Math.sin(wx * 0.025 + 5) * height * 0.1;
     ctx.lineTo(x, baseY - h);
   }
   ctx.lineTo(canvas.width, canvas.height);
@@ -402,10 +506,12 @@ function startLevel(num) {
 }
 
 function startGame() {
+  initAudio();
   levelNum = 1;
   player.lives = 3;
   player.score = 0;
   startLevel(1);
+  startMusic();
 }
 
 // ---- UPDATE ----
@@ -419,8 +525,8 @@ function update() {
     levelCompleteTimer--;
     if (levelCompleteTimer <= 0) {
       levelNum++;
-      if (levelNum > 3) { state = 'WIN'; }
-      else { startLevel(levelNum); }
+      if (levelNum > 3) { state = 'WIN'; sfxWin(); }
+      else { startLevel(levelNum); startMusic(); }
     }
     return;
   }
@@ -444,6 +550,7 @@ function update() {
     player.onGround = false;
     player.jumpHeld = true;
     player.jumpTime = 0;
+    sfxJump();
     spawnParticles(player.x + 14, player.y + 36, '#a0a0a0', 6, 2);
   }
   if (jumpKey && player.jumpHeld && player.jumpTime < 10 && player.vy < 0) {
@@ -467,8 +574,8 @@ function update() {
   for (const plat of level.platforms) {
     plat.update();
     if (player.vy >= 0 &&
-        player.x + player.w > plat.x && player.x < plat.x + plat.w &&
-        player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy + 2) {
+      player.x + player.w > plat.x && player.x < plat.x + plat.w &&
+      player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy + 2) {
       player.y = plat.y - player.h;
       player.vy = 0;
       player.onGround = true;
@@ -496,6 +603,7 @@ function update() {
     if (!coin.collected && aabb(player, coin)) {
       coin.collected = true;
       player.score += 100;
+      sfxCoin();
       spawnParticles(coin.x + 8, coin.y + 8, '#ffd54f', 10, 3);
     }
   }
@@ -509,6 +617,7 @@ function update() {
         enemy.alive = false;
         player.vy = JUMP_FORCE * 0.6;
         player.score += 200;
+        sfxStomp();
         spawnParticles(enemy.x + 15, enemy.y + 14, '#e53935', 12, 4);
       } else if (player.invincible <= 0) {
         playerDeath();
@@ -523,6 +632,8 @@ function update() {
     state = 'LEVEL_COMPLETE';
     levelCompleteTimer = 90;
     player.score += 500;
+    sfxLevelComplete();
+    stopMusic();
     spawnParticles(level.flag.x + 10, level.flag.y, '#ffeb3b', 20, 5);
   }
 
@@ -538,9 +649,11 @@ function update() {
 
 function playerDeath() {
   player.lives--;
+  sfxDeath();
   spawnParticles(player.x + 14, player.y + 18, '#4fc3f7', 15, 5);
   if (player.lives <= 0) {
     state = 'GAME_OVER';
+    stopMusic();
   } else {
     player.reset(80, 300);
     player.invincible = 90;
