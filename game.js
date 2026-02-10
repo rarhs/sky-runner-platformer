@@ -87,46 +87,71 @@ function sfxWin() {
   });
 }
 
-// Background music — a simple retro loop
+// Background music — unique theme per level
 let musicTimeout = null;
-function startMusic() {
+let currentMusicLevel = 1;
+const musicTimeouts = [];
+
+function startMusic(lvl) {
   if (!audioCtx || musicPlaying) return;
   musicPlaying = true;
-  musicGain = audioCtx.createGain();
-  musicGain.gain.value = 0.04;
-  musicGain.connect(audioCtx.destination);
+  currentMusicLevel = lvl || 1;
   playMusicLoop();
 }
 
 function stopMusic() {
   musicPlaying = false;
+  musicTimeouts.forEach(t => clearTimeout(t));
+  musicTimeouts.length = 0;
   if (musicTimeout) clearTimeout(musicTimeout);
 }
 
+// Level 1: Calm, adventurous — triangle wave, relaxed pace
+const melody1 = [
+  262, 294, 330, 349, 392, 349, 330, 294,
+  262, 330, 392, 523, 392, 330, 262, 294,
+  349, 392, 440, 392, 349, 330, 294, 262
+];
+// Level 2: Intense, faster — square wave, quicker tempo
+const melody2 = [
+  330, 392, 440, 523, 440, 392, 330, 392,
+  523, 587, 659, 587, 523, 440, 392, 440,
+  523, 659, 784, 659, 523, 440, 392, 330
+];
+// Level 3: Dramatic, urgent — sawtooth wave, fastest tempo, lower pitch
+const melody3 = [
+  196, 220, 262, 294, 262, 220, 196, 220,
+  262, 330, 392, 330, 262, 220, 196, 262,
+  294, 330, 392, 440, 392, 330, 262, 196,
+  220, 262, 330, 262, 220, 196, 165, 196
+];
+
+const levelMusic = {
+  1: { melody: melody1, gap: 210, noteLen: 0.20, type: 'triangle', vol: 0.04 },
+  2: { melody: melody2, gap: 160, noteLen: 0.15, type: 'square', vol: 0.03 },
+  3: { melody: melody3, gap: 130, noteLen: 0.14, type: 'sawtooth', vol: 0.025 }
+};
+
 function playMusicLoop() {
   if (!musicPlaying || !audioCtx) return;
-  // Simple melody pattern
-  const melody = [
-    262, 294, 330, 349, 392, 349, 330, 294,
-    262, 330, 392, 523, 392, 330, 262, 294,
-    349, 392, 440, 392, 349, 330, 294, 262
-  ];
-  const noteLen = 0.18;
-  const gap = 200; // ms between notes
+  const cfg = levelMusic[currentMusicLevel] || levelMusic[1];
+  const { melody, gap, noteLen, type, vol } = cfg;
+
   melody.forEach((freq, i) => {
-    musicTimeout = setTimeout(() => {
+    const t = setTimeout(() => {
       if (!musicPlaying || !audioCtx) return;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
-      osc.type = 'triangle';
+      osc.type = type;
       osc.frequency.value = freq;
-      g.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      g.gain.setValueAtTime(vol, audioCtx.currentTime);
       g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + noteLen);
       osc.connect(g);
       g.connect(audioCtx.destination);
       osc.start();
       osc.stop(audioCtx.currentTime + noteLen);
     }, i * gap);
+    musicTimeouts.push(t);
   });
   // Loop after melody finishes
   musicTimeout = setTimeout(() => playMusicLoop(), melody.length * gap);
@@ -511,7 +536,7 @@ function startGame() {
   player.lives = 3;
   player.score = 0;
   startLevel(1);
-  startMusic();
+  startMusic(levelNum);
 }
 
 // ---- UPDATE ----
@@ -526,7 +551,7 @@ function update() {
     if (levelCompleteTimer <= 0) {
       levelNum++;
       if (levelNum > 3) { state = 'WIN'; sfxWin(); }
-      else { startLevel(levelNum); startMusic(); }
+      else { startLevel(levelNum); startMusic(levelNum); }
     }
     return;
   }
