@@ -101,6 +101,16 @@ function sfxCheckpoint() {
   setTimeout(() => playTone(1047, 0.18, 'triangle', 0.1), 200);
 }
 
+function sfxSpike() {
+  playTone(150, 0.1, 'sawtooth', 0.15, 50);
+  setTimeout(() => playTone(100, 0.15, 'square', 0.1, 40), 80);
+}
+
+function sfxLava() {
+  playTone(80, 0.3, 'sawtooth', 0.12, 40);
+  setTimeout(() => playTone(120, 0.2, 'square', 0.08, 60), 100);
+}
+
 // Background music — unique theme per level
 let musicTimeout = null;
 let currentMusicLevel = 1;
@@ -359,6 +369,130 @@ class Enemy {
   }
 }
 
+// ---- BAT (flying enemy) ----
+class Bat {
+  constructor(x, y, range) {
+    this.x = x; this.y = y; this.w = 26; this.h = 20;
+    this.originX = x; this.originY = y;
+    this.range = range || 120;
+    this.speed = 1.5; this.dir = 1; this.alive = true;
+    this.time = rand(0, Math.PI * 2);
+    this.wingFrame = 0;
+  }
+  update() {
+    if (!this.alive) return;
+    this.time += 0.03;
+    this.wingFrame += 0.15;
+    this.x += this.speed * this.dir;
+    this.y = this.originY + Math.sin(this.time * 2) * 30;
+    if (this.x > this.originX + this.range || this.x < this.originX - this.range) {
+      this.dir *= -1;
+    }
+  }
+  draw() {
+    if (!this.alive) return;
+    const sx = this.x - cam.x, sy = this.y - cam.y;
+    const wingY = Math.sin(this.wingFrame) * 6;
+    // Wings
+    ctx.fillStyle = '#7b1fa2';
+    ctx.beginPath();
+    ctx.moveTo(sx + 13, sy + 10);
+    ctx.lineTo(sx - 4, sy + 4 + wingY);
+    ctx.lineTo(sx + 4, sy + 14);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(sx + 13, sy + 10);
+    ctx.lineTo(sx + 30, sy + 4 + wingY);
+    ctx.lineTo(sx + 22, sy + 14);
+    ctx.fill();
+    // Body
+    ctx.fillStyle = '#4a148c';
+    ctx.beginPath();
+    ctx.arc(sx + 13, sy + 10, 7, 0, Math.PI * 2);
+    ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#ff1744';
+    ctx.fillRect(sx + 8, sy + 7, 3, 3);
+    ctx.fillRect(sx + 15, sy + 7, 3, 3);
+  }
+}
+
+// ---- SPIKE (hazard) ----
+class Spike {
+  constructor(x, y, count) {
+    this.x = x; this.y = y;
+    this.count = count || 3;
+    this.w = this.count * 16; this.h = 16;
+  }
+  update() { }
+  draw() {
+    const sx = this.x - cam.x, sy = this.y - cam.y;
+    for (let i = 0; i < this.count; i++) {
+      // Metallic spike
+      ctx.fillStyle = '#b0bec5';
+      ctx.beginPath();
+      ctx.moveTo(sx + i * 16, sy + 16);
+      ctx.lineTo(sx + i * 16 + 8, sy);
+      ctx.lineTo(sx + i * 16 + 16, sy + 16);
+      ctx.fill();
+      // Highlight edge
+      ctx.fillStyle = '#eceff1';
+      ctx.beginPath();
+      ctx.moveTo(sx + i * 16 + 6, sy + 4);
+      ctx.lineTo(sx + i * 16 + 8, sy);
+      ctx.lineTo(sx + i * 16 + 10, sy + 4);
+      ctx.fill();
+    }
+  }
+}
+
+// ---- LAVA (hazard) ----
+class Lava {
+  constructor(x, y, w) {
+    this.x = x; this.y = y; this.w = w; this.h = 40;
+    this.time = rand(0, Math.PI * 2);
+    this.bubbles = [];
+    for (let i = 0; i < Math.floor(w / 30); i++) {
+      this.bubbles.push({ x: rand(0, w), phase: rand(0, Math.PI * 2), speed: rand(0.03, 0.06) });
+    }
+  }
+  update() { this.time += 0.04; }
+  draw() {
+    const sx = this.x - cam.x, sy = this.y - cam.y;
+    // Main lava body
+    const grd = ctx.createLinearGradient(sx, sy, sx, sy + 40);
+    grd.addColorStop(0, '#ff6f00');
+    grd.addColorStop(0.5, '#e65100');
+    grd.addColorStop(1, '#bf360c');
+    ctx.fillStyle = grd;
+    ctx.fillRect(sx, sy + 6, this.w, 34);
+    // Wavy surface
+    ctx.fillStyle = '#ffab00';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + 12);
+    for (let x = 0; x <= this.w; x += 8) {
+      const wave = Math.sin(this.time * 2 + x * 0.06) * 4;
+      ctx.lineTo(sx + x, sy + 6 + wave);
+    }
+    ctx.lineTo(sx + this.w, sy + 12);
+    ctx.fill();
+    // Bubbles
+    ctx.fillStyle = '#ffd600';
+    for (const b of this.bubbles) {
+      const by = Math.sin(this.time * 3 + b.phase) * 4;
+      const bsize = Math.sin(this.time * 2 + b.phase) * 2 + 3;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(sx + b.x, sy + 14 + by, bsize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Glow
+    ctx.fillStyle = 'rgba(255, 152, 0, 0.15)';
+    ctx.fillRect(sx, sy - 10, this.w, 16);
+  }
+}
+
 // ---- FLAG (level goal) ----
 class Flag {
   constructor(x, y) {
@@ -471,6 +605,9 @@ function createLevel(num) {
   const platforms = [];
   const coins = [];
   const enemies = [];
+  const bats = [];
+  const spikes = [];
+  const lavas = [];
   let flag;
 
   if (num === 1) {
@@ -537,6 +674,9 @@ function createLevel(num) {
     enemies.push(new Enemy(1580, 256, 40));
     // Flag
     flag = new Flag(2100, 420);
+    // Hazards for Level 2
+    spikes.push(new Spike(750, 304, 2));
+    spikes.push(new Spike(1500, 384, 2));
   } else if (num === 2) {
     // Level 3 — hardest
     platforms.push(new Platform(0, 480, 200, 60, '#5d4037'));
@@ -581,6 +721,13 @@ function createLevel(num) {
     enemies.push(new Enemy(620, 196, 30));
     // Flag
     flag = new Flag(2530, 420);
+    // Hazards for Level 3
+    spikes.push(new Spike(700, 324, 2));
+    spikes.push(new Spike(2200, 464, 3));
+    lavas.push(new Lava(200, 500, 600));
+    lavas.push(new Lava(1000, 500, 600));
+    bats.push(new Bat(500, 180, 100));
+    bats.push(new Bat(1400, 200, 120));
   } else if (num === 4) {
     // Level 4 — Sky Temple (double jump + wall jump required)
     const checkpoints = [];
@@ -632,7 +779,12 @@ function createLevel(num) {
     enemies.push(new Enemy(1850, 452, 60));
     // Flag
     flag = new Flag(2020, 420);
-    return { platforms, coins, enemies, flag, checkpoints, width: flag.x + 200 };
+    // Hazards for Level 4
+    bats.push(new Bat(600, 250, 80));
+    bats.push(new Bat(1250, 150, 60));
+    spikes.push(new Spike(950, 334, 3));
+    lavas.push(new Lava(520, 500, 100));
+    return { platforms, coins, enemies, bats, spikes, lavas, flag, checkpoints, width: flag.x + 200 };
   } else {
     // Level 5 — The Gauntlet (everything combined)
     const checkpoints = [];
@@ -690,9 +842,17 @@ function createLevel(num) {
     enemies.push(new Enemy(2480, 452, 50));
     // Flag
     flag = new Flag(2580, 420);
-    return { platforms, coins, enemies, flag, checkpoints, width: flag.x + 200 };
+    // Hazards for Level 5
+    bats.push(new Bat(550, 250, 80));
+    bats.push(new Bat(1350, 200, 100));
+    bats.push(new Bat(2100, 350, 80));
+    spikes.push(new Spike(1750, 464, 4));
+    spikes.push(new Spike(2430, 464, 3));
+    lavas.push(new Lava(400, 500, 150));
+    lavas.push(new Lava(1050, 500, 150));
+    return { platforms, coins, enemies, bats, spikes, lavas, flag, checkpoints, width: flag.x + 200 };
   }
-  return { platforms, coins, enemies, flag, checkpoints: [], width: flag.x + 200 };
+  return { platforms, coins, enemies, bats, spikes, lavas, flag, checkpoints: [], width: flag.x + 200 };
 }
 
 // ---- GAME STATE ----
@@ -899,6 +1059,49 @@ function update() {
     }
   }
 
+  // ---- Bats ----
+  if (level.bats) {
+    for (const bat of level.bats) {
+      bat.update();
+      if (bat.alive && aabb(player, bat)) {
+        if (player.vy > 0 && player.y + player.h < bat.y + 12) {
+          bat.alive = false;
+          player.vy = JUMP_FORCE * 0.6;
+          player.score += 300;
+          sfxStomp();
+          spawnParticles(bat.x + 13, bat.y + 10, '#7b1fa2', 12, 4);
+        } else if (player.invincible <= 0) {
+          playerDeath();
+          return;
+        }
+      }
+    }
+  }
+
+  // ---- Spikes ----
+  if (level.spikes) {
+    for (const spike of level.spikes) {
+      if (aabb(player, spike) && player.invincible <= 0) {
+        sfxSpike();
+        playerDeath();
+        return;
+      }
+    }
+  }
+
+  // ---- Lava ----
+  if (level.lavas) {
+    for (const lava of level.lavas) {
+      lava.update();
+      if (aabb(player, lava)) {
+        sfxLava();
+        spawnParticles(player.x + 14, player.y + 18, '#ff6f00', 20, 5);
+        playerDeath();
+        return;
+      }
+    }
+  }
+
   // ---- Flag ----
   level.flag.update();
   if (aabb(player, level.flag)) {
@@ -952,8 +1155,16 @@ function draw() {
   drawBackground(level ? level.width : 2000);
 
   if (level) {
+    // Lava (drawn behind platforms)
+    if (level.lavas) {
+      for (const lv of level.lavas) lv.draw();
+    }
     // Platforms
     for (const p of level.platforms) p.draw();
+    // Spikes
+    if (level.spikes) {
+      for (const sp of level.spikes) sp.draw();
+    }
     // Checkpoints
     if (level.checkpoints) {
       for (const cp of level.checkpoints) cp.draw();
@@ -962,6 +1173,10 @@ function draw() {
     for (const c of level.coins) c.draw();
     // Enemies
     for (const e of level.enemies) e.draw();
+    // Bats
+    if (level.bats) {
+      for (const b of level.bats) b.draw();
+    }
     // Flag
     level.flag.draw();
   }
