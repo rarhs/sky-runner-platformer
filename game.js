@@ -87,6 +87,20 @@ function sfxWin() {
   });
 }
 
+function sfxDoubleJump() {
+  playTone(500, 0.12, 'square', 0.1, 900);
+}
+
+function sfxWallJump() {
+  playTone(350, 0.1, 'sawtooth', 0.1, 700);
+}
+
+function sfxCheckpoint() {
+  playTone(659, 0.12, 'triangle', 0.12);
+  setTimeout(() => playTone(784, 0.12, 'triangle', 0.12), 100);
+  setTimeout(() => playTone(1047, 0.18, 'triangle', 0.1), 200);
+}
+
 // Background music — unique theme per level
 let musicTimeout = null;
 let currentMusicLevel = 1;
@@ -126,10 +140,26 @@ const melody3 = [
   220, 262, 330, 262, 220, 196, 165, 196
 ];
 
+// Level 4: Ethereal sky temple — sine wave, mystical
+const melody4 = [
+  392, 523, 659, 784, 659, 523, 392, 440,
+  523, 659, 784, 880, 784, 659, 523, 440,
+  392, 523, 440, 392, 349, 392, 440, 523
+];
+// Level 5: Final gauntlet — aggressive, mixed
+const melody5 = [
+  196, 262, 330, 392, 330, 262, 196, 165,
+  196, 262, 392, 523, 392, 262, 196, 220,
+  262, 330, 392, 523, 659, 523, 392, 262,
+  220, 196, 165, 196, 220, 262, 330, 262
+];
+
 const levelMusic = {
   1: { melody: melody1, gap: 210, noteLen: 0.20, type: 'triangle', vol: 0.04 },
   2: { melody: melody2, gap: 160, noteLen: 0.15, type: 'square', vol: 0.03 },
-  3: { melody: melody3, gap: 130, noteLen: 0.14, type: 'sawtooth', vol: 0.025 }
+  3: { melody: melody3, gap: 130, noteLen: 0.14, type: 'sawtooth', vol: 0.025 },
+  4: { melody: melody4, gap: 190, noteLen: 0.22, type: 'sine', vol: 0.05 },
+  5: { melody: melody5, gap: 120, noteLen: 0.12, type: 'sawtooth', vol: 0.03 }
 };
 
 function playMusicLoop() {
@@ -193,9 +223,20 @@ const player = {
   facing: 1, frame: 0, frameTimer: 0,
   lives: 3, score: 0, invincible: 0,
   jumpHeld: false, jumpTime: 0,
+  // Double jump
+  jumpsLeft: 2, maxJumps: 2,
+  // Wall jump
+  onWall: false, wallDir: 0, wallSlideTimer: 0,
+  // Checkpoint
+  lastCheckpoint: null,
   reset(x, y) {
-    this.x = x || 80; this.y = y || 300;
-    this.vx = 0; this.vy = 0; this.onGround = false;
+    const cx = this.lastCheckpoint;
+    this.x = x || (cx ? cx.x : 80);
+    this.y = y || (cx ? cx.y - this.h : 300);
+    this.vx = 0; this.vy = 0;
+    this.onGround = false; this.onWall = false;
+    this.wallDir = 0; this.wallSlideTimer = 0;
+    this.jumpsLeft = this.maxJumps;
   }
 };
 
@@ -348,6 +389,36 @@ class Flag {
   }
 }
 
+// ---- CHECKPOINT ----
+class Checkpoint {
+  constructor(x, y) {
+    this.x = x; this.y = y; this.w = 16; this.h = 50;
+    this.active = false; this.time = 0;
+  }
+  update() { this.time += 0.05; }
+  draw() {
+    const sx = this.x - cam.x, sy = this.y - cam.y;
+    // Pole
+    ctx.fillStyle = this.active ? '#66bb6a' : '#616161';
+    ctx.fillRect(sx + 6, sy + 10, 4, 40);
+    // Orb
+    const glow = this.active ? Math.sin(this.time * 2) * 0.3 + 0.7 : 0.3;
+    ctx.globalAlpha = glow;
+    ctx.fillStyle = this.active ? '#69f0ae' : '#9e9e9e';
+    ctx.beginPath();
+    ctx.arc(sx + 8, sy + 6, 8, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner glow
+    if (this.active) {
+      ctx.fillStyle = '#b9f6ca';
+      ctx.beginPath();
+      ctx.arc(sx + 8, sy + 6, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
 // ---- CAMERA ----
 const cam = { x: 0, y: 0 };
 
@@ -466,7 +537,7 @@ function createLevel(num) {
     enemies.push(new Enemy(1580, 256, 40));
     // Flag
     flag = new Flag(2100, 420);
-  } else {
+  } else if (num === 2) {
     // Level 3 — hardest
     platforms.push(new Platform(0, 480, 200, 60, '#5d4037'));
     platforms.push(new Platform(800, 480, 200, 60, '#5d4037'));
@@ -510,8 +581,118 @@ function createLevel(num) {
     enemies.push(new Enemy(620, 196, 30));
     // Flag
     flag = new Flag(2530, 420);
+  } else if (num === 4) {
+    // Level 4 — Sky Temple (double jump + wall jump required)
+    const checkpoints = [];
+    // Ground start
+    platforms.push(new Platform(0, 480, 250, 60, '#37474f'));
+    // Tall walls for wall jumping
+    platforms.push(new Platform(300, 200, 20, 280, '#546e7a'));
+    platforms.push(new Platform(380, 200, 20, 280, '#546e7a'));
+    // Platform after wall jump
+    platforms.push(new Platform(440, 300, 80, 16, '#607d8b'));
+    // Checkpoint 1
+    checkpoints.push(new Checkpoint(470, 250));
+    // Double jump gap
+    platforms.push(new Platform(600, 350, 60, 16, '#607d8b'));
+    platforms.push(new Platform(780, 280, 60, 16, '#607d8b'));
+    platforms.push(new Platform(950, 350, 80, 16, '#607d8b'));
+    // Another wall section
+    platforms.push(new Platform(1080, 150, 20, 330, '#546e7a'));
+    platforms.push(new Platform(1160, 150, 20, 330, '#546e7a'));
+    platforms.push(new Platform(1080, 140, 100, 16, '#607d8b'));
+    // Checkpoint 2
+    checkpoints.push(new Checkpoint(1120, 90));
+    // Sky bridge
+    platforms.push(new Platform(1250, 200, 60, 16, '#607d8b'));
+    platforms.push(new Platform(1370, 250, 80, 16, '#80cbc4', 1, 60));
+    platforms.push(new Platform(1520, 200, 60, 16, '#607d8b'));
+    // Final wall climb
+    platforms.push(new Platform(1650, 100, 20, 380, '#546e7a'));
+    platforms.push(new Platform(1730, 100, 20, 380, '#546e7a'));
+    // Landing
+    platforms.push(new Platform(1780, 480, 300, 60, '#37474f'));
+    // Coins
+    coins.push(new Coin(340, 300));
+    coins.push(new Coin(340, 350));
+    coins.push(new Coin(340, 250));
+    coins.push(new Coin(630, 310));
+    coins.push(new Coin(810, 240));
+    coins.push(new Coin(980, 310));
+    coins.push(new Coin(1120, 180));
+    coins.push(new Coin(1280, 160));
+    coins.push(new Coin(1400, 210));
+    coins.push(new Coin(1550, 160));
+    coins.push(new Coin(1690, 200));
+    coins.push(new Coin(1690, 250));
+    coins.push(new Coin(1690, 300));
+    // Enemies
+    enemies.push(new Enemy(460, 276, 30));
+    enemies.push(new Enemy(960, 322, 40));
+    enemies.push(new Enemy(1850, 452, 60));
+    // Flag
+    flag = new Flag(2020, 420);
+    return { platforms, coins, enemies, flag, checkpoints, width: flag.x + 200 };
+  } else {
+    // Level 5 — The Gauntlet (everything combined)
+    const checkpoints = [];
+    // Start
+    platforms.push(new Platform(0, 480, 200, 60, '#4e342e'));
+    // Wall jump intro
+    platforms.push(new Platform(250, 200, 20, 280, '#6d4c41'));
+    platforms.push(new Platform(330, 200, 20, 280, '#6d4c41'));
+    platforms.push(new Platform(400, 280, 80, 16, '#795548'));
+    // Checkpoint 1
+    checkpoints.push(new Checkpoint(430, 230));
+    // Moving platform section
+    platforms.push(new Platform(550, 350, 80, 16, '#80cbc4', 1, 80));
+    platforms.push(new Platform(730, 280, 80, 16, '#80cbc4', 1, 60));
+    platforms.push(new Platform(900, 350, 80, 16, '#80cbc4', 1, 100));
+    // Checkpoint 2
+    platforms.push(new Platform(1050, 400, 100, 16, '#795548'));
+    checkpoints.push(new Checkpoint(1080, 350));
+    // Wall + double jump combo
+    platforms.push(new Platform(1200, 150, 20, 330, '#6d4c41'));
+    platforms.push(new Platform(1280, 150, 20, 330, '#6d4c41'));
+    platforms.push(new Platform(1350, 300, 60, 16, '#795548'));
+    platforms.push(new Platform(1500, 220, 60, 16, '#795548'));
+    // Checkpoint 3
+    platforms.push(new Platform(1620, 350, 80, 16, '#795548'));
+    checkpoints.push(new Checkpoint(1650, 300));
+    // Enemy gauntlet on ground
+    platforms.push(new Platform(1750, 480, 500, 60, '#4e342e'));
+    // Final ascent walls
+    platforms.push(new Platform(2300, 180, 20, 300, '#6d4c41'));
+    platforms.push(new Platform(2380, 180, 20, 300, '#6d4c41'));
+    platforms.push(new Platform(2430, 480, 200, 60, '#4e342e'));
+    // Coins
+    coins.push(new Coin(290, 300));
+    coins.push(new Coin(290, 350));
+    coins.push(new Coin(580, 310));
+    coins.push(new Coin(760, 240));
+    coins.push(new Coin(930, 310));
+    coins.push(new Coin(1240, 250));
+    coins.push(new Coin(1240, 300));
+    coins.push(new Coin(1380, 260));
+    coins.push(new Coin(1530, 180));
+    coins.push(new Coin(1800, 440));
+    coins.push(new Coin(1900, 440));
+    coins.push(new Coin(2000, 440));
+    coins.push(new Coin(2340, 280));
+    coins.push(new Coin(2340, 330));
+    coins.push(new Coin(2500, 440));
+    // Enemies
+    enemies.push(new Enemy(430, 256, 30));
+    enemies.push(new Enemy(1070, 372, 40));
+    enemies.push(new Enemy(1800, 452, 60));
+    enemies.push(new Enemy(1920, 452, 50));
+    enemies.push(new Enemy(2060, 452, 40));
+    enemies.push(new Enemy(2480, 452, 50));
+    // Flag
+    flag = new Flag(2580, 420);
+    return { platforms, coins, enemies, flag, checkpoints, width: flag.x + 200 };
   }
-  return { platforms, coins, enemies, flag, width: flag.x + 200 };
+  return { platforms, coins, enemies, flag, checkpoints: [], width: flag.x + 200 };
 }
 
 // ---- GAME STATE ----
@@ -524,7 +705,9 @@ let menuBob = 0;
 
 function startLevel(num) {
   level = createLevel(num);
+  player.lastCheckpoint = null;
   player.reset(80, 300);
+  player.jumpsLeft = player.maxJumps;
   cam.x = 0; cam.y = 0;
   particles = [];
   state = 'PLAYING';
@@ -550,7 +733,7 @@ function update() {
     levelCompleteTimer--;
     if (levelCompleteTimer <= 0) {
       levelNum++;
-      if (levelNum > 3) { state = 'WIN'; sfxWin(); }
+      if (levelNum > 5) { state = 'WIN'; sfxWin(); }
       else { startLevel(levelNum); startMusic(levelNum); }
     }
     return;
@@ -568,15 +751,35 @@ function update() {
     player.facing = 1;
   }
 
-  // Variable-height jump
+  // Variable-height jump + double jump + wall jump
   const jumpKey = keys['Space'] || keys['ArrowUp'] || keys['KeyW'];
-  if (jumpKey && player.onGround && !player.jumpHeld) {
-    player.vy = JUMP_FORCE;
-    player.onGround = false;
-    player.jumpHeld = true;
-    player.jumpTime = 0;
-    sfxJump();
-    spawnParticles(player.x + 14, player.y + 36, '#a0a0a0', 6, 2);
+  if (jumpKey && !player.jumpHeld) {
+    if (player.onWall && !player.onGround) {
+      // Wall jump — launch away from wall
+      player.vy = JUMP_FORCE * 0.9;
+      player.vx = player.wallDir * -8;
+      player.facing = -player.wallDir;
+      player.onWall = false;
+      player.jumpHeld = true;
+      player.jumpTime = 0;
+      player.jumpsLeft = Math.max(player.jumpsLeft - 1, 0);
+      sfxWallJump();
+      spawnParticles(player.x + (player.wallDir > 0 ? 0 : player.w), player.y + 18, '#90caf9', 8, 3);
+    } else if (player.jumpsLeft > 0) {
+      const isDoubleJump = !player.onGround;
+      player.vy = JUMP_FORCE * (isDoubleJump ? 0.85 : 1);
+      player.onGround = false;
+      player.jumpHeld = true;
+      player.jumpTime = 0;
+      player.jumpsLeft--;
+      if (isDoubleJump) {
+        sfxDoubleJump();
+        spawnParticles(player.x + 14, player.y + 36, '#4fc3f7', 10, 3);
+      } else {
+        sfxJump();
+        spawnParticles(player.x + 14, player.y + 36, '#a0a0a0', 6, 2);
+      }
+    }
   }
   if (jumpKey && player.jumpHeld && player.jumpTime < 10 && player.vy < 0) {
     player.vy += JUMP_FORCE * 0.05;
@@ -596,21 +799,53 @@ function update() {
   if (player.frameTimer > 6) { player.frame++; player.frameTimer = 0; }
 
   // ---- Platform collision ----
+  player.onWall = false;
+  player.wallDir = 0;
   for (const plat of level.platforms) {
     plat.update();
+    // Land on top
     if (player.vy >= 0 &&
       player.x + player.w > plat.x && player.x < plat.x + plat.w &&
       player.y + player.h > plat.y && player.y + player.h < plat.y + plat.h + player.vy + 2) {
       player.y = plat.y - player.h;
       player.vy = 0;
       player.onGround = true;
+      player.jumpsLeft = player.maxJumps;
       // Move with moving platform
       if (plat.moveRange > 0) {
-        const prevX = plat.x;
-        // Approximate movement delta
         player.x += Math.cos(plat.time) * plat.moveRange * 0.02;
       }
     }
+    // Wall detection (only for tall platforms, h > 40)
+    if (plat.h > 40 && !player.onGround) {
+      // Right side of player hits left side of wall
+      if (player.x + player.w > plat.x && player.x + player.w < plat.x + 10 &&
+        player.y + player.h > plat.y + 4 && player.y < plat.y + plat.h - 4) {
+        player.onWall = true;
+        player.wallDir = 1;
+        player.x = plat.x - player.w;
+      }
+      // Left side of player hits right side of wall
+      if (player.x < plat.x + plat.w && player.x > plat.x + plat.w - 10 &&
+        player.y + player.h > plat.y + 4 && player.y < plat.y + plat.h - 4) {
+        player.onWall = true;
+        player.wallDir = -1;
+        player.x = plat.x + plat.w;
+      }
+    }
+  }
+
+  // Wall slide — slow fall when on wall and holding toward it
+  if (player.onWall && !player.onGround) {
+    const holdingToward = (player.wallDir > 0 && (keys['ArrowRight'] || keys['KeyD'])) ||
+      (player.wallDir < 0 && (keys['ArrowLeft'] || keys['KeyA']));
+    if (holdingToward && player.vy > 0) {
+      player.vy = Math.min(player.vy, 2);
+      player.wallSlideTimer++;
+      player.jumpsLeft = Math.max(player.jumpsLeft, 1);
+    }
+  } else {
+    player.wallSlideTimer = 0;
   }
 
   // left wall
@@ -620,6 +855,19 @@ function update() {
   if (player.y > 600) {
     playerDeath();
     return;
+  }
+
+  // ---- Checkpoints ----
+  if (level.checkpoints) {
+    for (const cp of level.checkpoints) {
+      cp.update();
+      if (!cp.active && aabb(player, cp)) {
+        cp.active = true;
+        player.lastCheckpoint = { x: cp.x, y: cp.y };
+        sfxCheckpoint();
+        spawnParticles(cp.x + 8, cp.y + 6, '#69f0ae', 15, 4);
+      }
+    }
   }
 
   // ---- Coins ----
@@ -680,9 +928,14 @@ function playerDeath() {
     state = 'GAME_OVER';
     stopMusic();
   } else {
-    player.reset(80, 300);
+    // Respawn at checkpoint if available
+    if (player.lastCheckpoint) {
+      player.reset();
+    } else {
+      player.reset(80, 300);
+    }
     player.invincible = 90;
-    cam.x = 0; cam.y = 0;
+    player.jumpsLeft = player.maxJumps;
   }
 }
 
@@ -701,12 +954,27 @@ function draw() {
   if (level) {
     // Platforms
     for (const p of level.platforms) p.draw();
+    // Checkpoints
+    if (level.checkpoints) {
+      for (const cp of level.checkpoints) cp.draw();
+    }
     // Coins
     for (const c of level.coins) c.draw();
     // Enemies
     for (const e of level.enemies) e.draw();
     // Flag
     level.flag.draw();
+  }
+
+  // Wall slide effect — friction lines
+  if (player.onWall && !player.onGround && player.wallSlideTimer > 0) {
+    const sx = player.x + (player.wallDir > 0 ? player.w - 2 : 0) - cam.x;
+    const sy = player.y - cam.y;
+    ctx.fillStyle = '#b0bec5';
+    for (let i = 0; i < 3; i++) {
+      const yo = (player.wallSlideTimer * 2 + i * 12) % 36;
+      ctx.fillRect(sx, sy + yo, 3, 6);
+    }
   }
 
   // Player
@@ -817,6 +1085,21 @@ function drawHUD() {
   ctx.fillStyle = '#80cbc4';
   ctx.textAlign = 'right';
   ctx.fillText('LVL ' + levelNum, canvas.width - 16, 30);
+
+  // Jump indicator (small dots)
+  ctx.textAlign = 'left';
+  for (let i = 0; i < player.maxJumps; i++) {
+    ctx.fillStyle = i < player.jumpsLeft ? '#81d4fa' : '#37474f';
+    ctx.beginPath();
+    ctx.arc(430 + i * 18, 26, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Wall slide icon if on wall
+  if (player.onWall && !player.onGround) {
+    ctx.fillStyle = '#90caf9';
+    ctx.font = '12px "Inter", sans-serif';
+    ctx.fillText('⬤ WALL', 470, 30);
+  }
   ctx.textAlign = 'left';
 }
 
