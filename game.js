@@ -111,6 +111,17 @@ function sfxLava() {
   setTimeout(() => playTone(120, 0.2, 'square', 0.08, 60), 100);
 }
 
+function sfxPowerUp() {
+  playTone(523, 0.1, 'triangle', 0.12);
+  setTimeout(() => playTone(659, 0.1, 'triangle', 0.12), 80);
+  setTimeout(() => playTone(784, 0.1, 'triangle', 0.12), 160);
+  setTimeout(() => playTone(1047, 0.15, 'triangle', 0.1), 240);
+}
+
+function sfxPowerDown() {
+  playTone(400, 0.15, 'sine', 0.06, 200);
+}
+
 // Background music — unique theme per level
 let musicTimeout = null;
 let currentMusicLevel = 1;
@@ -239,6 +250,8 @@ const player = {
   onWall: false, wallDir: 0, wallSlideTimer: 0,
   // Checkpoint
   lastCheckpoint: null,
+  // Power-ups
+  speedBoost: 0, invincibilityPU: 0, coinMagnet: 0,
   reset(x, y) {
     const cx = this.lastCheckpoint;
     this.x = x || (cx ? cx.x : 80);
@@ -247,6 +260,7 @@ const player = {
     this.onGround = false; this.onWall = false;
     this.wallDir = 0; this.wallSlideTimer = 0;
     this.jumpsLeft = this.maxJumps;
+    this.speedBoost = 0; this.invincibilityPU = 0; this.coinMagnet = 0;
   }
 };
 
@@ -553,6 +567,44 @@ class Checkpoint {
   }
 }
 
+// ---- POWER-UP ----
+class PowerUp {
+  constructor(x, y, type) {
+    this.x = x; this.y = y; this.w = 20; this.h = 20;
+    this.type = type; // 'speed', 'invincible', 'magnet'
+    this.collected = false;
+    this.time = rand(0, Math.PI * 2);
+  }
+  update() { this.time += 0.05; }
+  draw() {
+    if (this.collected) return;
+    const sx = this.x - cam.x, sy = this.y + Math.sin(this.time) * 4 - cam.y;
+    // Glow aura
+    const colors = { speed: '#ff9800', invincible: '#ffd600', magnet: '#42a5f5' };
+    const icons = { speed: '⚡', invincible: '🛡️', magnet: '🧲' };
+    const c = colors[this.type];
+    ctx.globalAlpha = 0.3 + Math.sin(this.time * 2) * 0.15;
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(sx + 10, sy + 10, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Box
+    ctx.fillStyle = c;
+    ctx.fillRect(sx + 2, sy + 2, 16, 16);
+    // Inner highlight
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(sx + 4, sy + 4, 6, 3);
+    ctx.globalAlpha = 1;
+    // Type indicator
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(icons[this.type], sx + 10, sy + 14);
+    ctx.textAlign = 'left';
+  }
+}
+
 // ---- CAMERA ----
 const cam = { x: 0, y: 0 };
 
@@ -608,6 +660,7 @@ function createLevel(num) {
   const bats = [];
   const spikes = [];
   const lavas = [];
+  const powerups = [];
   let flag;
 
   if (num === 1) {
@@ -639,6 +692,8 @@ function createLevel(num) {
     enemies.push(new Enemy(1550, 452, 80));
     // Flag
     flag = new Flag(1830, 420);
+    // Power-ups (Level 1 — tutorial)
+    powerups.push(new PowerUp(880, 240, 'speed'));
   } else if (num === 2) {
     // Ground
     platforms.push(new Platform(0, 480, 300, 60, '#4a5568'));
@@ -677,6 +732,9 @@ function createLevel(num) {
     // Hazards for Level 2
     spikes.push(new Spike(750, 304, 2));
     spikes.push(new Spike(1500, 384, 2));
+    // Power-ups (Level 2)
+    powerups.push(new PowerUp(430, 260, 'speed'));
+    powerups.push(new PowerUp(1380, 270, 'magnet'));
   } else if (num === 2) {
     // Level 3 — hardest
     platforms.push(new Platform(0, 480, 200, 60, '#5d4037'));
@@ -728,6 +786,9 @@ function createLevel(num) {
     lavas.push(new Lava(1000, 500, 600));
     bats.push(new Bat(500, 180, 100));
     bats.push(new Bat(1400, 200, 120));
+    // Power-ups (Level 3)
+    powerups.push(new PowerUp(490, 240, 'invincible'));
+    powerups.push(new PowerUp(1350, 260, 'magnet'));
   } else if (num === 4) {
     // Level 4 — Sky Temple (double jump + wall jump required)
     const checkpoints = [];
@@ -784,7 +845,11 @@ function createLevel(num) {
     bats.push(new Bat(1250, 150, 60));
     spikes.push(new Spike(950, 334, 3));
     lavas.push(new Lava(520, 500, 100));
-    return { platforms, coins, enemies, bats, spikes, lavas, flag, checkpoints, width: flag.x + 200 };
+    // Power-ups (Level 4)
+    powerups.push(new PowerUp(630, 310, 'speed'));
+    powerups.push(new PowerUp(1280, 120, 'invincible'));
+    powerups.push(new PowerUp(1550, 160, 'magnet'));
+    return { platforms, coins, enemies, bats, spikes, lavas, powerups, flag, checkpoints, width: flag.x + 200 };
   } else {
     // Level 5 — The Gauntlet (everything combined)
     const checkpoints = [];
@@ -850,9 +915,12 @@ function createLevel(num) {
     spikes.push(new Spike(2430, 464, 3));
     lavas.push(new Lava(400, 500, 150));
     lavas.push(new Lava(1050, 500, 150));
-    return { platforms, coins, enemies, bats, spikes, lavas, flag, checkpoints, width: flag.x + 200 };
+    // Power-ups (Level 5)
+    powerups.push(new PowerUp(580, 310, 'speed'));
+    powerups.push(new PowerUp(1380, 220, 'invincible'));
+    return { platforms, coins, enemies, bats, spikes, lavas, powerups, flag, checkpoints, width: flag.x + 200 };
   }
-  return { platforms, coins, enemies, bats, spikes, lavas, flag, checkpoints: [], width: flag.x + 200 };
+  return { platforms, coins, enemies, bats, spikes, lavas, powerups, flag, checkpoints: [], width: flag.x + 200 };
 }
 
 // ---- GAME STATE ----
@@ -902,12 +970,13 @@ function update() {
   if (state === 'GAME_OVER' || state === 'WIN') return;
 
   // ---- Player movement ----
+  const speedMul = player.speedBoost > 0 ? 1.8 : 1;
   if (keys['ArrowLeft'] || keys['KeyA']) {
-    player.vx -= PLAYER_SPEED;
+    player.vx -= PLAYER_SPEED * speedMul;
     player.facing = -1;
   }
   if (keys['ArrowRight'] || keys['KeyD']) {
-    player.vx += PLAYER_SPEED;
+    player.vx += PLAYER_SPEED * speedMul;
     player.facing = 1;
   }
 
@@ -957,6 +1026,22 @@ function update() {
   if (player.invincible > 0) player.invincible--;
   player.frameTimer++;
   if (player.frameTimer > 6) { player.frame++; player.frameTimer = 0; }
+
+  // ---- Power-up timers ----
+  if (player.speedBoost > 0) {
+    player.speedBoost--;
+    // Orange trail particles
+    if (Math.random() < 0.4) spawnParticles(player.x + 14, player.y + 30, '#ff9800', 1, 2);
+    if (player.speedBoost === 0) sfxPowerDown();
+  }
+  if (player.invincibilityPU > 0) {
+    player.invincibilityPU--;
+    if (player.invincibilityPU === 0) sfxPowerDown();
+  }
+  if (player.coinMagnet > 0) {
+    player.coinMagnet--;
+    if (player.coinMagnet === 0) sfxPowerDown();
+  }
 
   // ---- Platform collision ----
   player.onWall = false;
@@ -1033,6 +1118,16 @@ function update() {
   // ---- Coins ----
   for (const coin of level.coins) {
     coin.update();
+    // Coin magnet — pull nearby coins
+    if (!coin.collected && player.coinMagnet > 0) {
+      const dx = (player.x + 14) - (coin.x + 8);
+      const dy = (player.y + 18) - (coin.y + 8);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150) {
+        coin.x += dx / dist * 5;
+        coin.y += dy / dist * 5;
+      }
+    }
     if (!coin.collected && aabb(player, coin)) {
       coin.collected = true;
       player.score += 100;
@@ -1052,7 +1147,7 @@ function update() {
         player.score += 200;
         sfxStomp();
         spawnParticles(enemy.x + 15, enemy.y + 14, '#e53935', 12, 4);
-      } else if (player.invincible <= 0) {
+      } else if (player.invincible <= 0 && player.invincibilityPU <= 0) {
         playerDeath();
         return;
       }
@@ -1070,7 +1165,7 @@ function update() {
           player.score += 300;
           sfxStomp();
           spawnParticles(bat.x + 13, bat.y + 10, '#7b1fa2', 12, 4);
-        } else if (player.invincible <= 0) {
+        } else if (player.invincible <= 0 && player.invincibilityPU <= 0) {
           playerDeath();
           return;
         }
@@ -1081,7 +1176,7 @@ function update() {
   // ---- Spikes ----
   if (level.spikes) {
     for (const spike of level.spikes) {
-      if (aabb(player, spike) && player.invincible <= 0) {
+      if (aabb(player, spike) && player.invincible <= 0 && player.invincibilityPU <= 0) {
         sfxSpike();
         playerDeath();
         return;
@@ -1093,11 +1188,26 @@ function update() {
   if (level.lavas) {
     for (const lava of level.lavas) {
       lava.update();
-      if (aabb(player, lava)) {
+      if (aabb(player, lava) && player.invincibilityPU <= 0) {
         sfxLava();
         spawnParticles(player.x + 14, player.y + 18, '#ff6f00', 20, 5);
         playerDeath();
         return;
+      }
+    }
+  }
+
+  // ---- Power-ups ----
+  if (level.powerups) {
+    for (const pu of level.powerups) {
+      pu.update();
+      if (!pu.collected && aabb(player, pu)) {
+        pu.collected = true;
+        sfxPowerUp();
+        spawnParticles(pu.x + 10, pu.y + 10, pu.type === 'speed' ? '#ff9800' : pu.type === 'invincible' ? '#ffd600' : '#42a5f5', 15, 4);
+        if (pu.type === 'speed') player.speedBoost = 300; // ~5 sec
+        if (pu.type === 'invincible') player.invincibilityPU = 300;
+        if (pu.type === 'magnet') player.coinMagnet = 480; // ~8 sec
       }
     }
   }
@@ -1177,6 +1287,10 @@ function draw() {
     if (level.bats) {
       for (const b of level.bats) b.draw();
     }
+    // Power-ups
+    if (level.powerups) {
+      for (const pu of level.powerups) pu.draw();
+    }
     // Flag
     level.flag.draw();
   }
@@ -1190,6 +1304,37 @@ function draw() {
       const yo = (player.wallSlideTimer * 2 + i * 12) % 36;
       ctx.fillRect(sx, sy + yo, 3, 6);
     }
+  }
+
+  // Invincibility PU shimmer
+  if (player.invincibilityPU > 0) {
+    const sx = player.x - cam.x, sy = player.y - cam.y;
+    ctx.globalAlpha = 0.25 + Math.sin(Date.now() * 0.01) * 0.15;
+    ctx.fillStyle = '#ffd600';
+    ctx.beginPath();
+    ctx.arc(sx + 14, sy + 18, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Coin magnet lines
+  if (player.coinMagnet > 0 && level) {
+    ctx.strokeStyle = '#42a5f5';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    for (const coin of level.coins) {
+      if (coin.collected) continue;
+      const dx = (player.x + 14) - (coin.x + 8);
+      const dy = (player.y + 18) - (coin.y + 8);
+      if (Math.sqrt(dx * dx + dy * dy) < 150) {
+        ctx.beginPath();
+        ctx.moveTo(player.x + 14 - cam.x, player.y + 18 - cam.y);
+        ctx.lineTo(coin.x + 8 - cam.x, coin.y + 8 - cam.y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
   }
 
   // Player
@@ -1315,6 +1460,30 @@ function drawHUD() {
     ctx.font = '12px "Inter", sans-serif';
     ctx.fillText('⬤ WALL', 470, 30);
   }
+
+  // Power-up bars
+  let barX = 16;
+  const barY = 38;
+  const puList = [
+    { timer: player.speedBoost, max: 300, color: '#ff9800', label: '⚡' },
+    { timer: player.invincibilityPU, max: 300, color: '#ffd600', label: '🛡️' },
+    { timer: player.coinMagnet, max: 480, color: '#42a5f5', label: '🧲' },
+  ];
+  for (const pu of puList) {
+    if (pu.timer > 0) {
+      const pct = pu.timer / pu.max;
+      ctx.font = '12px sans-serif';
+      ctx.fillText(pu.label, barX, barY + 13);
+      // Bar background
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(barX + 18, barY + 4, 50, 8);
+      // Bar fill
+      ctx.fillStyle = pu.color;
+      ctx.fillRect(barX + 18, barY + 4, 50 * pct, 8);
+      barX += 80;
+    }
+  }
+
   ctx.textAlign = 'left';
 }
 
