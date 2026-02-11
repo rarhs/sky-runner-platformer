@@ -32,6 +32,6 @@ trigger: always_on
 ## Progress
 - [x] Batch 1: Double jump, wall jump, wall slide, checkpoints, levels 4-5
 - [x] Batch 2: Flying bats, spikes, lava hazards
-- [ ] Batch 3: Power-ups (speed boost, invincibility, coin magnet)
+- [x] Batch 3: Power-ups (speed boost, invincibility, coin magnet)
 - [ ] Batch 4: More levels using all mechanics
 - [ ] Batch 5: Level select screen, high scores, mobile controls
