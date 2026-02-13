@@ -1061,21 +1061,32 @@ function update() {
         player.x += Math.cos(plat.time) * plat.moveRange * 0.02;
       }
     }
-    // Wall detection (only for tall platforms, h > 40)
-    if (plat.h > 40 && !player.onGround) {
-      // Right side of player hits left side of wall
-      if (player.x + player.w > plat.x && player.x + player.w < plat.x + 10 &&
-        player.y + player.h > plat.y + 4 && player.y < plat.y + plat.h - 4) {
-        player.onWall = true;
-        player.wallDir = 1;
+    // Head bonk — hitting bottom from below
+    if (player.vy < 0 &&
+      player.x + player.w > plat.x + 4 && player.x < plat.x + plat.w - 4 &&
+      player.y < plat.y + plat.h && player.y > plat.y + plat.h + player.vy - 2) {
+      player.y = plat.y + plat.h;
+      player.vy = 0;
+    }
+    // Side blocking — push player out horizontally
+    if (player.y + player.h > plat.y + 4 && player.y < plat.y + plat.h - 4) {
+      // Right side of player hits left side of platform
+      if (player.x + player.w > plat.x && player.x + player.w < plat.x + 14) {
         player.x = plat.x - player.w;
+        player.vx = 0;
+        if (!player.onGround) {
+          player.onWall = true;
+          player.wallDir = 1;
+        }
       }
-      // Left side of player hits right side of wall
-      if (player.x < plat.x + plat.w && player.x > plat.x + plat.w - 10 &&
-        player.y + player.h > plat.y + 4 && player.y < plat.y + plat.h - 4) {
-        player.onWall = true;
-        player.wallDir = -1;
+      // Left side of player hits right side of platform
+      if (player.x < plat.x + plat.w && player.x > plat.x + plat.w - 14) {
         player.x = plat.x + plat.w;
+        player.vx = 0;
+        if (!player.onGround) {
+          player.onWall = true;
+          player.wallDir = -1;
+        }
       }
     }
   }
