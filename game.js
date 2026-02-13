@@ -924,12 +924,38 @@ function createLevel(num) {
 }
 
 // ---- GAME STATE ----
-let state = 'MENU'; // MENU, PLAYING, LEVEL_COMPLETE, GAME_OVER, WIN
+let state = 'MENU'; // MENU, LEVEL_SELECT, PLAYING, LEVEL_COMPLETE, GAME_OVER, WIN
 let level = null;
 let levelNum = 1;
 let levelCompleteTimer = 0;
 let deathTimer = 0;
 let menuBob = 0;
+let selectCursor = 0; // Level select cursor (0-4)
+
+// ---- SAVE / LOAD ----
+const TOTAL_LEVELS = 5;
+const levelNames = ['Green Hills', 'Sky Bridge', 'Dark Cavern', 'Sky Temple', 'The Gauntlet'];
+let unlockedLevels = 1;
+let highScores = [0, 0, 0, 0, 0];
+
+function loadProgress() {
+  try {
+    const data = JSON.parse(localStorage.getItem('skyrunner_save'));
+    if (data) {
+      unlockedLevels = data.unlocked || 1;
+      highScores = data.scores || [0, 0, 0, 0, 0];
+    }
+  } catch (e) { }
+}
+
+function saveProgress() {
+  localStorage.setItem('skyrunner_save', JSON.stringify({
+    unlocked: unlockedLevels,
+    scores: highScores
+  }));
+}
+
+loadProgress();
 
 function startLevel(num) {
   level = createLevel(num);
@@ -943,11 +969,8 @@ function startLevel(num) {
 
 function startGame() {
   initAudio();
-  levelNum = 1;
-  player.lives = 3;
-  player.score = 0;
-  startLevel(1);
-  startMusic(levelNum);
+  state = 'LEVEL_SELECT';
+  selectCursor = 0;
 }
 
 // ---- UPDATE ----
@@ -957,11 +980,22 @@ function update() {
     return;
   }
 
+  if (state === 'LEVEL_SELECT') return;
+
   if (state === 'LEVEL_COMPLETE') {
     levelCompleteTimer--;
     if (levelCompleteTimer <= 0) {
+      // Save high score for this level
+      if (player.score > highScores[levelNum - 1]) {
+        highScores[levelNum - 1] = player.score;
+      }
+      // Unlock next level
+      if (levelNum < TOTAL_LEVELS && unlockedLevels <= levelNum) {
+        unlockedLevels = levelNum + 1;
+      }
+      saveProgress();
       levelNum++;
-      if (levelNum > 5) { state = 'WIN'; sfxWin(); }
+      if (levelNum > TOTAL_LEVELS) { state = 'WIN'; sfxWin(); }
       else { startLevel(levelNum); startMusic(levelNum); }
     }
     return;
@@ -1272,6 +1306,11 @@ function draw() {
     return;
   }
 
+  if (state === 'LEVEL_SELECT') {
+    drawLevelSelect();
+    return;
+  }
+
   // Background
   drawBackground(level ? level.width : 2000);
 
@@ -1525,7 +1564,7 @@ function drawGameOver() {
   if (blink) {
     ctx.font = '700 16px "Press Start 2P", monospace';
     ctx.fillStyle = '#80cbc4';
-    ctx.fillText('PRESS ENTER TO RETRY', canvas.width / 2, 340);
+    ctx.fillText('PRESS ENTER FOR LEVEL SELECT', canvas.width / 2, 340);
   }
   ctx.textAlign = 'left';
 }
@@ -1547,7 +1586,7 @@ function drawWinScreen() {
   if (blink) {
     ctx.font = '700 14px "Press Start 2P", monospace';
     ctx.fillStyle = '#80cbc4';
-    ctx.fillText('PRESS ENTER TO PLAY AGAIN', canvas.width / 2, 380);
+    ctx.fillText('PRESS ENTER FOR LEVEL SELECT', canvas.width / 2, 380);
   }
   ctx.textAlign = 'left';
 }
@@ -1555,16 +1594,228 @@ function drawWinScreen() {
 // ---- MENU/RESTART INPUT ----
 window.addEventListener('keydown', e => {
   if (e.code === 'Enter') {
-    if (state === 'MENU' || state === 'GAME_OVER' || state === 'WIN') {
+    if (state === 'MENU') {
       startGame();
+    } else if (state === 'LEVEL_SELECT') {
+      // Start selected level
+      if (selectCursor < unlockedLevels) {
+        levelNum = selectCursor + 1;
+        player.lives = 3;
+        player.score = 0;
+        startLevel(levelNum);
+        startMusic(levelNum);
+      }
+    } else if (state === 'GAME_OVER' || state === 'WIN') {
+      state = 'LEVEL_SELECT';
+      selectCursor = 0;
+      stopMusic();
+    }
+  }
+  if (state === 'LEVEL_SELECT') {
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      selectCursor = Math.max(0, selectCursor - 1);
+    }
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      selectCursor = Math.min(TOTAL_LEVELS - 1, selectCursor + 1);
     }
   }
 });
+
+// ---- LEVEL SELECT SCREEN ----
+function drawLevelSelect() {
+  // BG
+  const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grd.addColorStop(0, '#0d1b2a');
+  grd.addColorStop(1, '#1b3a4b');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Stars
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 60; i++) {
+    const sx = (i * 137 + 50) % canvas.width;
+    const sy = (i * 97 + 30) % (canvas.height * 0.4);
+    const twinkle = Math.sin(Date.now() * 0.002 + i * 0.5) * 0.3 + 0.5;
+    ctx.globalAlpha = twinkle;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.font = '900 28px "Press Start 2P", monospace';
+  ctx.fillStyle = '#81d4fa';
+  ctx.fillText('SELECT LEVEL', canvas.width / 2, 70);
+
+  // Level cards
+  const cardW = 120, cardH = 140, gap = 20;
+  const totalW = TOTAL_LEVELS * cardW + (TOTAL_LEVELS - 1) * gap;
+  const startX = (canvas.width - totalW) / 2;
+  const startY = 130;
+
+  for (let i = 0; i < TOTAL_LEVELS; i++) {
+    const x = startX + i * (cardW + gap);
+    const y = startY;
+    const unlocked = i < unlockedLevels;
+    const selected = i === selectCursor;
+    const completed = highScores[i] > 0;
+
+    // Card background
+    if (selected) {
+      // Selected glow
+      ctx.fillStyle = 'rgba(79, 195, 247, 0.2)';
+      ctx.fillRect(x - 4, y - 4, cardW + 8, cardH + 8);
+    }
+    ctx.fillStyle = unlocked ? '#1e3a5f' : '#1a1a2e';
+    ctx.fillRect(x, y, cardW, cardH);
+    // Border
+    ctx.strokeStyle = selected ? '#4fc3f7' : (unlocked ? '#37474f' : '#1a1a2e');
+    ctx.lineWidth = selected ? 3 : 1;
+    ctx.strokeRect(x, y, cardW, cardH);
+
+    if (unlocked) {
+      // Level number
+      ctx.font = '900 32px "Press Start 2P", monospace';
+      ctx.fillStyle = selected ? '#4fc3f7' : '#546e7a';
+      ctx.fillText(i + 1, x + cardW / 2, y + 45);
+
+      // Level name
+      ctx.font = '700 10px "Inter", sans-serif';
+      ctx.fillStyle = '#90a4ae';
+      ctx.fillText(levelNames[i], x + cardW / 2, y + 70);
+
+      // Star if completed
+      if (completed) {
+        ctx.font = '20px sans-serif';
+        ctx.fillText('⭐', x + cardW / 2, y + 98);
+      }
+
+      // High score
+      if (highScores[i] > 0) {
+        ctx.font = '700 10px "Inter", sans-serif';
+        ctx.fillStyle = '#ffd54f';
+        ctx.fillText('Best: ' + highScores[i], x + cardW / 2, y + 125);
+      }
+    } else {
+      // Locked
+      ctx.font = '28px sans-serif';
+      ctx.fillText('🔒', x + cardW / 2, y + 55);
+      ctx.font = '700 10px "Inter", sans-serif';
+      ctx.fillStyle = '#455a64';
+      ctx.fillText('Locked', x + cardW / 2, y + 85);
+    }
+  }
+
+  // Instructions
+  const blink = Math.sin(Date.now() * 0.005) > 0;
+  if (blink) {
+    ctx.font = '700 12px "Press Start 2P", monospace';
+    ctx.fillStyle = '#ffd54f';
+    ctx.fillText('← →  CHOOSE   ENTER  START', canvas.width / 2, startY + cardH + 50);
+  }
+
+  ctx.font = '12px "Inter", sans-serif';
+  ctx.fillStyle = '#546e7a';
+  ctx.fillText('Levels unlocked: ' + unlockedLevels + '/' + TOTAL_LEVELS, canvas.width / 2, startY + cardH + 80);
+
+  ctx.textAlign = 'left';
+}
+
+// ---- MOBILE TOUCH CONTROLS ----
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+let touchButtons = [];
+
+if (isTouchDevice) {
+  const btnSize = 60;
+  const margin = 16;
+  const bottomY = canvas.height - btnSize - margin;
+
+  touchButtons = [
+    { id: 'left', x: margin, y: bottomY, w: btnSize, h: btnSize, key: 'ArrowLeft', label: '◀' },
+    { id: 'right', x: margin + btnSize + 10, y: bottomY, w: btnSize, h: btnSize, key: 'ArrowRight', label: '▶' },
+    { id: 'jump', x: canvas.width - btnSize - margin, y: bottomY, w: btnSize, h: btnSize, key: 'Space', label: '▲' },
+  ];
+
+  function handleTouch(e, pressed) {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    for (const touch of e.changedTouches) {
+      const tx = (touch.clientX - rect.left) * scaleX;
+      const ty = (touch.clientY - rect.top) * scaleY;
+      for (const btn of touchButtons) {
+        if (tx >= btn.x && tx <= btn.x + btn.w && ty >= btn.y && ty <= btn.y + btn.h) {
+          keys[btn.key] = pressed;
+        }
+      }
+    }
+  }
+
+  canvas.addEventListener('touchstart', e => {
+    handleTouch(e, true);
+    // Also handle menu/level select taps
+    if (state === 'MENU') startGame();
+    if (state === 'GAME_OVER' || state === 'WIN') {
+      state = 'LEVEL_SELECT';
+      selectCursor = 0;
+      stopMusic();
+    }
+    if (state === 'LEVEL_SELECT') {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const tx = (e.changedTouches[0].clientX - rect.left) * scaleX;
+      const ty = (e.changedTouches[0].clientY - rect.top) * scaleY;
+      // Check if tapped on a level card
+      const cardW = 120, cardH = 140, gap = 20;
+      const totalW = TOTAL_LEVELS * cardW + (TOTAL_LEVELS - 1) * gap;
+      const startX = (canvas.width - totalW) / 2;
+      const startYY = 130;
+      for (let i = 0; i < TOTAL_LEVELS; i++) {
+        const cx = startX + i * (cardW + gap);
+        if (tx >= cx && tx <= cx + cardW && ty >= startYY && ty <= startYY + cardH) {
+          selectCursor = i;
+          if (i < unlockedLevels) {
+            levelNum = i + 1;
+            player.lives = 3;
+            player.score = 0;
+            startLevel(levelNum);
+            startMusic(levelNum);
+          }
+          break;
+        }
+      }
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => handleTouch(e, false), { passive: false });
+  canvas.addEventListener('touchcancel', e => handleTouch(e, false), { passive: false });
+}
+
+function drawTouchControls() {
+  if (!isTouchDevice || state !== 'PLAYING') return;
+  ctx.globalAlpha = 0.35;
+  for (const btn of touchButtons) {
+    ctx.fillStyle = keys[btn.key] ? '#4fc3f7' : '#263238';
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.strokeStyle = '#546e7a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.fillStyle = '#fff';
+    ctx.font = '24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(btn.label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 8);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
+}
 
 // ---- GAME LOOP ----
 function gameLoop() {
   update();
   draw();
+  // Touch controls drawn on top of everything
+  drawTouchControls();
   requestAnimationFrame(gameLoop);
 }
 
